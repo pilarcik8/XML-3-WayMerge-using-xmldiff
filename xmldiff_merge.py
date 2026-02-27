@@ -1,68 +1,97 @@
 from lxml import etree
-from xmldiff import main, patch
+from xmldiff import main as xmldiff_main, patch
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def load_xml(path):
-    full = os.path.join(BASE_DIR, path)
-    return etree.parse(full)
+def user_input_dir_to_files():
+    print("Vložte absolútnu cestu k priečinku so súbormi")
 
-def save_xml(tree, path):
-    full = os.path.join(BASE_DIR, path)
-    tree.write(full, pretty_print=True, encoding="utf-8", xml_declaration=True)
+    while True:
+        input_path = input()
+
+        if not input_path or input_path.strip() == "":
+            print("Zadajte platnú cestu (nie prázdnu). Skúste znova:")
+            continue
+
+        input_path = input_path.strip().strip('"')
+        full_path = os.path.abspath(input_path)
+
+        if not os.path.isdir(full_path):
+            print(f"Adresár neexistuje: {full_path}. Skontrolujte cestu a skúste znova:")
+            continue
+
+        return full_path
+
+
+def load_xml(full_path):
+    return etree.parse(full_path)
+
+
+def save_xml(tree, full_path):
+    tree.write(full_path, pretty_print=True, encoding="utf-8", xml_declaration=True)
+
 
 def merge_three_way(base_path, left_path, right_path, result_path):
-    try:
-        base_tree = load_xml(base_path)
-        left_tree = load_xml(left_path)
-        right_tree = load_xml(right_path)
-    except Exception as e: 
-        return False
+    base_tree = load_xml(base_path)
+    left_tree = load_xml(left_path)
+    right_tree = load_xml(right_path)
 
-
-    diff_left = main.diff_trees(base_tree, left_tree)
-    diff_right = main.diff_trees(base_tree, right_tree)
+    diff_left = xmldiff_main.diff_trees(base_tree, left_tree)
+    diff_right = xmldiff_main.diff_trees(base_tree, right_tree)
 
     patcher = patch.Patcher()
     merged_root = patcher.patch(diff_left, base_tree)
     merged_root = patcher.patch(diff_right, merged_root)
 
     save_xml(etree.ElementTree(merged_root), result_path)
-    return True
 
 
-if __name__ == "__main__":
-    index = 0
-
-    inputs_dir = "inputs"
-    result_dir= "results"
+def main():
+    DirWithFiles = user_input_dir_to_files()
+    result_dir = os.path.join(DirWithFiles, "results")
 
     if not os.path.exists(result_dir):
         os.mkdir(result_dir)
 
-    if not os.path.exists(inputs_dir): 
-        print(f"Nexistoval priečinok '{inputs_dir}' v projekte. Zaplnite ho súbormi a spustite program znovu.") 
-        os.mkdir(inputs_dir)
-        exit(1)
+    iteration = 0
+    errored_files = []
 
-    base_path=inputs_dir + "/" + str(index) + "/base"+ str(index) +".xml"
-    left_path=inputs_dir + "/" + str(index) + "/left"+ str(index) +".xml"
-    right_path=inputs_dir + "/" + str(index) + "/right"+ str(index) +".xml"
-    
-    result_path=result_dir + "/result"+ str(index) +".xml"
-    
-    while merge_three_way(
-        base_path=base_path,
-        left_path=left_path,
-        right_path=right_path,
-        result_path=result_path
-    ):
-        index += 1
-        base_path=inputs_dir + "/"+ str(index) +"/base"+ str(index) +".xml"
-        left_path=inputs_dir + "/"+ str(index) +"/left"+ str(index) +".xml"
-        right_path=inputs_dir + "/"+ str(index) +"/right"+ str(index) +".xml"
-        result_path=result_dir + "/result"+ str(index) +".xml"
-    
-    if index == 0:print("Nenajdeny ziadny súbor na spracovanie.")
-    else: print(f"Zpracované {index} súborov/súbory.")
+    while True:
+
+        base_path = os.path.join(DirWithFiles, str(iteration), f"base{iteration}.xml")
+        left_path = os.path.join(DirWithFiles, str(iteration), f"left{iteration}.xml")
+        right_path = os.path.join(DirWithFiles, str(iteration), f"right{iteration}.xml")
+        result_path = os.path.join(result_dir, f"mergedResult{iteration}.xml")
+
+        if not (os.path.isfile(base_path) and
+                os.path.isfile(left_path) and
+                os.path.isfile(right_path)):
+
+            print(f"Ended at iteration: {iteration}")
+
+            if iteration == 0:
+                print("Nenájdený žiadny súbor na spracovanie.")
+            else:
+                print(f"Počet chybne spracovaných súborov: {len(errored_files)}")
+
+                if errored_files:
+                    print("Chybné iterácie:", ", ".join(map(str, errored_files)))
+                else:
+                    print("None")
+
+                conflict_percent = (len(errored_files) * 100.0) / iteration
+                print(f"{conflict_percent:.2f}% konfliktov")
+
+            break
+
+        try:
+            merge_three_way(base_path, left_path, right_path, result_path)
+        except Exception as ex:
+            print(f"Chyba pri mergovaní v iterácii {iteration}: {ex}")
+            errored_files.append(iteration)
+
+        iteration += 1
+
+
+if __name__ == "__main__":
+    main()
